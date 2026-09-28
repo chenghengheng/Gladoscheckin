@@ -246,6 +246,17 @@ class API:
                 self._log("error", LogEmoji.ERROR, f"不支持的 HTTP 方法: {method}", force=True)
                 return None
 
+            if self.verbose:
+                set_cookie = bool(response.headers.get("set-cookie"))
+                content_type = response.headers.get("content-type", "")
+                self._log(
+                    "info",
+                    LogEmoji.INFO,
+                    f"HTTP {method.upper()} {url}: status={response.status_code}, "
+                    f"content-type={content_type!r}, set-cookie={set_cookie}, "
+                    f"session-cookie-names={sorted(self.session.cookies.keys())}",
+                )
+
             if not response.ok:
                 self._log("warning", LogEmoji.WARNING, f"向 {url} 发起的请求失败，状态码 {response.status_code}。响应内容: {response.text}", force=True)
                 return None
@@ -274,6 +285,13 @@ class API:
 
         if response:
             data = response.json()
+            if self.verbose:
+                self._log(
+                    "info",
+                    LogEmoji.INFO,
+                    f"签到响应诊断: code={data.get('code', -2)}, message={data.get('message', '无消息字段')!r}, "
+                    f"response-cookie-names={sorted(response.cookies.keys())}",
+                )
             code = data.get("code", -2)
             message = data.get("message", "无消息字段")
             points = str(data.get("points", 0))
