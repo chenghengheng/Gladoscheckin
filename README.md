@@ -26,7 +26,7 @@
 
 - 点击第一个选项卡后在`Request Headers`下找到`Cookie`，右键复制cookie的值即可
 
-  > 参考格式：koa:sess=eyJ1c2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxAwMH0=; koa:sess.sig=xJkOxxxxxxxxxxxxxxxtnM;
+  > 参考格式：gld:sess=eyJ1c2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxAwMH0=; gld:sess.sig=xJkOxxxxxxxxxxxxxxxtnM;
 
 ![图片加载失败](imgs/3.png)
 
@@ -44,7 +44,7 @@
 
 > 不配置时默认为 `plan500`，即积分达到 500 时自动兑换 100 天
 
-4. 手机推送（非必须）
+4. User-Agent（建议配置，GLaDOS 设备校验需要）\r\n\r\n- 添加 1 个 `repository secret`，命名为 `GLADOS_USER_AGENT`。\r\n- 在登录 GLaDOS 的浏览器 F12 → Console 执行 `navigator.userAgent`，将完整结果原样保存为 Secret。\r\n- 如果签到返回 `code 4 Automated check-in detected`，优先检查此项是否与登录浏览器一致。\r\n\r\n5. 手机推送（非必须）
 
 - 添加1个`repository secret`，命名为`PUSHDEER_SENDKEY`，其值对应 PushDeer key: ([获取地址](https://www.pushdeer.com/product.html))。
 
@@ -65,10 +65,10 @@
 ## 更新日志
 
 - **2026-01**: 重构代码，添加log输出方便定位，支持新版网址，支持配置积分兑换策略。
-- **2026-04**: 优化代码逻辑，优化日志输出，支持[新版域名](https://railgun.info) ，在 GLADOS_COOKIES 中添加新版域名下的 cookies 即可使用。
+- **2026-04**: 优化代码逻辑，优化日志输出。
 
 
-## 问题排查与定位
+## 问题排查与定位\r\n- `glados.cloud` 使用 `gld:sess` / `gld:sess.sig` Cookie；签到请求还需要 `GLADOS_USER_AGENT` 与登录浏览器的平台保持一致。
 - 大家可以通过查询 actions 中的 running checkin 日志快速定位问题，有其他问题提交issue。
 
   <img width="1684" height="844" alt="image" src="https://github.com/user-attachments/assets/45348a5f-43e4-45f5-8fdf-ce84d343b30d" />

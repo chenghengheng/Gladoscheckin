@@ -98,6 +98,13 @@ class Config:
     ENV_COOKIES = "GLADOS_COOKIES"
     ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
     ENV_VERBOSE = "GLADOS_VERBOSE"
+    ENV_USER_AGENT = "GLADOS_USER_AGENT"
+
+    DEFAULT_USER_AGENT = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/154.0.0.0 Safari/537.36"
+    )
 
     """默认兑换计划"""
     DEFAULT_EXCHANGE_PLAN = "plan500"
@@ -106,7 +113,7 @@ class Config:
     DEFAULT_VERBOSE = False
 
     """默认域名"""
-    DOMAINS = ["glados.cloud", "railgun.info"]
+    DOMAINS = ["glados.cloud"]
 
     """兑换计划列表"""
     EXCHANGE_PLANS = {
@@ -120,6 +127,7 @@ class Config:
         self.cookies_list: List[str] = []
         self.exchange_plan: str = self.DEFAULT_EXCHANGE_PLAN
         self.verbose: bool = self.DEFAULT_VERBOSE
+        self.user_agent: str = self.DEFAULT_USER_AGENT
         self._load_config()
 
     def _load_config(self) -> None:
@@ -128,6 +136,7 @@ class Config:
         raw_cookies_env: Optional[str] = os.environ.get(self.ENV_COOKIES)
         exchange_plan_env: Optional[str] = os.environ.get(self.ENV_EXCHANGE_PLAN)
         verbose_env: Optional[str] = os.environ.get(self.ENV_VERBOSE)
+        user_agent_env: Optional[str] = os.environ.get(self.ENV_USER_AGENT)
 
         if not push_key_env:
             logger.warning(f"{LogEmoji.WARNING} 环境变量 '{self.ENV_PUSH_KEY}' 未设置。")
@@ -169,6 +178,15 @@ class Config:
 
         logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_VERBOSE}: {self.verbose}。")
 
+        if user_agent_env and user_agent_env.strip():
+            self.user_agent = user_agent_env.strip()
+            logger.info(f"{LogEmoji.INFO} 使用 {self.ENV_USER_AGENT} 指定的 User-Agent。")
+        else:
+            logger.info(
+                f"{LogEmoji.INFO} 未设置 {self.ENV_USER_AGENT}, 使用默认 User-Agent。"
+                "若签到仍被判定为自动签到 (code 4), 请把它设为登录浏览器的 navigator.userAgent。"
+            )
+
 
 class API:
     """API 调用"""
@@ -178,10 +196,11 @@ class API:
     POINTS_URL = APIEndpoint.POINTS.value
     EXCHANGE_URL = APIEndpoint.EXCHANGE.value
 
-    def __init__(self, domain: str, cookie_index: int = 0, verbose: bool = False):
+    def __init__(self, domain: str, cookie_index: int = 0, verbose: bool = False, user_agent: str = Config.DEFAULT_USER_AGENT):
         self.domain: str = domain
         self.cookie_index: int = cookie_index
         self.verbose: bool = verbose
+        self.user_agent: str = user_agent
         self.headers: Dict[str, str] = self._get_headers()
         self.session = requests.Session()
         self.session.headers.update(self.headers)
@@ -211,7 +230,7 @@ class API:
         """获取请求头"""
         return {
             "origin": f"https://{self.domain}",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36",
+            "user-agent": self.user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36",
         }
 
     def _log(self, level: str, emoji: str, message: str, force: bool = False) -> None:
@@ -238,12 +257,24 @@ class API:
 
         try:
             if method.upper() == "POST":
-                response = self.session.post(url, headers=session_headers, data=data, timeout=(60, 120))
+                session_headers["content-type"] = "application/json;charset=UTF-8"
+                response = self.session.post(url, headers=session_headers, json=data, timeout=(60, 120))
             elif method.upper() == "GET":
                 response = self.session.get(url, headers=session_headers, timeout=(60, 120))
             else:
                 self._log("error", LogEmoji.ERROR, f"不支持的 HTTP 方法: {method}", force=True)
                 return None
+
+            if self.verbose:
+                set_cookie = bool(response.headers.get("set-cookie"))
+                content_type = response.headers.get("content-type", "")
+                self._log(
+                    "info",
+                    LogEmoji.INFO,
+                    f"HTTP {method.upper()} {url}: status={response.status_code}, "
+                    f"content-type={content_type!r}, set-cookie={set_cookie}, "
+                    f"session-cookie-names={sorted(self.session.cookies.keys())}",
+                )
 
             if not response.ok:
                 self._log("warning", LogEmoji.WARNING, f"向 {url} 发起的请求失败，状态码 {response.status_code}。响应内容: {response.text}", force=True)
@@ -273,6 +304,13 @@ class API:
 
         if response:
             data = response.json()
+            if self.verbose:
+                self._log(
+                    "info",
+                    LogEmoji.INFO,
+                    f"签到响应诊断: code={data.get('code', -2)}, message={data.get('message', '无消息字段')!r}, "
+                    f"response-cookie-names={sorted(response.cookies.keys())}",
+                )
             code = data.get("code", -2)
             message = data.get("message", "无消息字段")
             points = str(data.get("points", 0))
@@ -455,7 +493,7 @@ class Checker:
     def _checkin_on_domain(self, cookie: str, cookie_idx: int, domain: str) -> CheckinResult:
         result = CheckinResult(cookie_idx, domain)
 
-        with API(domain, cookie_idx, verbose=self.config.verbose) as api:
+        with API(domain, cookie_idx, verbose=self.config.verbose, user_agent=self.config.user_agent) as api:
             # 1. 获取状态
             self._log(cookie_idx, domain, LogEmoji.STATUS, "查询剩余天数")
             days_str, status_code = api.get_status(cookie)
@@ -473,14 +511,18 @@ class Checker:
             result.points_total = points_str
 
             # 4. 执行兑换
-            required_points = self.config.EXCHANGE_PLANS.get(self.config.exchange_plan, 500)
-            self._log(
-                cookie_idx,
-                domain,
-                LogEmoji.EXCHANGE,
-                f"开始兑换 {self.config.exchange_plan} (需要 {required_points} 积分)",
-            )
-            result.exchange = api.exchange(cookie, self.config.exchange_plan, required_points)
+            if os.environ.get("GLADOS_SKIP_EXCHANGE", "").lower() not in ["true", "1", "yes", "y"]:
+                required_points = self.config.EXCHANGE_PLANS.get(self.config.exchange_plan, 500)
+                self._log(
+                    cookie_idx,
+                    domain,
+                    LogEmoji.EXCHANGE,
+                    f"开始兑换 {self.config.exchange_plan} (需要 {required_points} 积分)",
+                )
+                result.exchange = api.exchange(cookie, self.config.exchange_plan, required_points)
+            else:
+                self._log(cookie_idx, domain, LogEmoji.EXCHANGE, "实验模式：跳过兑换")
+                result.exchange = "实验模式：跳过兑换"
 
         return result
 
