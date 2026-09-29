@@ -100,6 +100,12 @@ class Config:
     ENV_VERBOSE = "GLADOS_VERBOSE"
     ENV_USER_AGENT = "GLADOS_USER_AGENT"
 
+    DEFAULT_USER_AGENT = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/154.0.0.0 Safari/537.36"
+    )
+
     """默认兑换计划"""
     DEFAULT_EXCHANGE_PLAN = "plan500"
 
@@ -121,7 +127,7 @@ class Config:
         self.cookies_list: List[str] = []
         self.exchange_plan: str = self.DEFAULT_EXCHANGE_PLAN
         self.verbose: bool = self.DEFAULT_VERBOSE
-        self.user_agent: str = ""
+        self.user_agent: str = self.DEFAULT_USER_AGENT
         self._load_config()
 
     def _load_config(self) -> None:
@@ -174,9 +180,12 @@ class Config:
 
         if user_agent_env and user_agent_env.strip():
             self.user_agent = user_agent_env.strip()
-            logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_USER_AGENT}: {self.user_agent}")
+            logger.info(f"{LogEmoji.INFO} 使用 {self.ENV_USER_AGENT} 指定的 User-Agent。")
         else:
-            logger.warning(f"{LogEmoji.WARNING} 环境变量 '{self.ENV_USER_AGENT}' 未设置，将使用脚本默认 User-Agent。GLaDOS 可能因设备不一致返回 code=4。")
+            logger.info(
+                f"{LogEmoji.INFO} 未设置 {self.ENV_USER_AGENT}, 使用默认 User-Agent。"
+                "若签到仍被判定为自动签到 (code 4), 请把它设为登录浏览器的 navigator.userAgent。"
+            )
 
 
 class API:
@@ -187,7 +196,7 @@ class API:
     POINTS_URL = APIEndpoint.POINTS.value
     EXCHANGE_URL = APIEndpoint.EXCHANGE.value
 
-    def __init__(self, domain: str, cookie_index: int = 0, verbose: bool = False, user_agent: str = ""):
+    def __init__(self, domain: str, cookie_index: int = 0, verbose: bool = False, user_agent: str = Config.DEFAULT_USER_AGENT):
         self.domain: str = domain
         self.cookie_index: int = cookie_index
         self.verbose: bool = verbose
