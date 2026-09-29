@@ -17,21 +17,12 @@ class CheckinStatus(Enum):
     FAILURE = -2
 
 
-class ExchangePlan(Enum):
-    """兑换计划"""
-
-    PLAN100 = "plan100"
-    PLAN200 = "plan200"
-    PLAN500 = "plan500"
-
-
 class APIEndpoint(Enum):
     """API端点"""
 
     CHECKIN = "/api/user/checkin"
     STATUS = "/api/user/status"
     POINTS = "/api/user/points"
-    EXCHANGE = "/api/user/exchange"
 
 
 class LogEmoji:
@@ -44,7 +35,6 @@ class LogEmoji:
     CHECKIN = "🎫"
     STATUS = "📊"
     POINTS = "💰"
-    EXCHANGE = "🎁"
     START = "🚀"
     END = "🏁"
     COOKIE = "🍪"
@@ -63,7 +53,6 @@ def log_method(func):
             "checkin": LogEmoji.CHECKIN,
             "get_status": LogEmoji.STATUS,
             "get_points": LogEmoji.POINTS,
-            "exchange": LogEmoji.EXCHANGE,
         }
         emoji = emoji_map.get(method_name, LogEmoji.INFO)
         try:
@@ -96,7 +85,6 @@ class Config:
 
     ENV_PUSH_KEY = "PUSHDEER_SENDKEY"
     ENV_COOKIES = "GLADOS_COOKIES"
-    ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
     ENV_VERBOSE = "GLADOS_VERBOSE"
     ENV_USER_AGENT = "GLADOS_USER_AGENT"
 
@@ -106,26 +94,15 @@ class Config:
         "Chrome/154.0.0.0 Safari/537.36"
     )
 
-    """默认兑换计划"""
-    DEFAULT_EXCHANGE_PLAN = "plan500"
-
     """默认是否输出详细响应"""
     DEFAULT_VERBOSE = False
 
     """默认域名"""
     DOMAINS = ["glados.cloud"]
 
-    """兑换计划列表"""
-    EXCHANGE_PLANS = {
-        ExchangePlan.PLAN100.value: 100,
-        ExchangePlan.PLAN200.value: 200,
-        ExchangePlan.PLAN500.value: 500,
-    }
-
     def __init__(self):
         self.push_key: str = ""
         self.cookies_list: List[str] = []
-        self.exchange_plan: str = self.DEFAULT_EXCHANGE_PLAN
         self.verbose: bool = self.DEFAULT_VERBOSE
         self.user_agent: str = self.DEFAULT_USER_AGENT
         self._load_config()
@@ -134,7 +111,6 @@ class Config:
         """加载配置"""
         push_key_env: Optional[str] = os.environ.get(self.ENV_PUSH_KEY)
         raw_cookies_env: Optional[str] = os.environ.get(self.ENV_COOKIES)
-        exchange_plan_env: Optional[str] = os.environ.get(self.ENV_EXCHANGE_PLAN)
         verbose_env: Optional[str] = os.environ.get(self.ENV_VERBOSE)
         user_agent_env: Optional[str] = os.environ.get(self.ENV_USER_AGENT)
 
@@ -152,20 +128,8 @@ class Config:
             if not self.cookies_list:
                 raise ValueError(f"环境变量 '{self.ENV_COOKIES}' 已设置，但未包含任何有效的 Cookie。")
 
-        if not exchange_plan_env:
-            logger.warning(f"{LogEmoji.WARNING} 环境变量 '{self.ENV_EXCHANGE_PLAN}' 未设置，将使用默认兑换计划 {self.DEFAULT_EXCHANGE_PLAN}。")
-            self.exchange_plan = self.DEFAULT_EXCHANGE_PLAN
-        else:
-            if exchange_plan_env in self.EXCHANGE_PLANS:
-                self.exchange_plan = exchange_plan_env
-                logger.info(f"{LogEmoji.SUCCESS} 使用指定的兑换计划: {self.exchange_plan}")
-            else:
-                logger.warning(f"{LogEmoji.WARNING} 环境变量 '{self.ENV_EXCHANGE_PLAN}' 的值 '{exchange_plan_env}' 无效，将使用默认兑换计划 {self.DEFAULT_EXCHANGE_PLAN}。")
-                self.exchange_plan = self.DEFAULT_EXCHANGE_PLAN
-
         logger.info(f"{LogEmoji.INFO} 共加载了 {len(self.cookies_list)} 个 Cookie 用于签到。")
         logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_PUSH_KEY} {'已设置' if push_key_env else '未设置'}。")
-        logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_EXCHANGE_PLAN}: {self.exchange_plan}。")
 
         if verbose_env is not None:
             verbose_env_lower = verbose_env.lower()
@@ -194,7 +158,6 @@ class API:
     CHECKIN_URL = APIEndpoint.CHECKIN.value
     STATUS_URL = APIEndpoint.STATUS.value
     POINTS_URL = APIEndpoint.POINTS.value
-    EXCHANGE_URL = APIEndpoint.EXCHANGE.value
 
     def __init__(self, domain: str, cookie_index: int = 0, verbose: bool = False, user_agent: str = Config.DEFAULT_USER_AGENT):
         self.domain: str = domain
@@ -388,26 +351,6 @@ class API:
             self._log("warning", LogEmoji.WARNING, "获取积分失败", force=True)
             return "None 积分", 0
 
-    @log_method
-    def exchange(self, cookies: str, plan: str, required_points: int) -> str:
-        """执行兑换"""
-        url = self._get_full_url(self.EXCHANGE_URL)
-        response = self._make_request(url, "POST", {"planType": plan}, cookies)
-
-        if response:
-            data = response.json()
-            code = data.get("code", -2)
-            message = data.get("message", "未知错误")
-
-            if code == 0:
-                self._log("info", LogEmoji.SUCCESS, f"{{ code : {code}, message : {message} }}")
-                return f"兑换成功: {plan}"
-            else:
-                self._log("info", LogEmoji.FAIL, f"{{ code : {code}, message : {message} }}", force=True)
-                return f"兑换失败: {message}"
-        else:
-            self._log("warning", LogEmoji.WARNING, "兑换失败", force=True)
-            return "兑换失败"
 
 
 @dataclass()
@@ -420,7 +363,6 @@ class CheckinResult:
     points: str = "0"
     days: str = "None"
     points_total: str = "None"
-    exchange: str = "未兑换"
     code: CheckinStatus = CheckinStatus.FAILURE  # 0: 成功, 1: 重复, -2: 失败
 
     def to_dict(self) -> Dict[str, Union[str, CheckinStatus]]:
@@ -485,7 +427,7 @@ class Checker:
                 result_message = f"结果: {result.status}"
                 if result.code == CheckinStatus.SUCCESS:
                     if self.config.verbose:
-                        result_message = f"结果: {result.status}, 获得 {result.points} 积分, 剩余 {result.days}, 总 {result.points_total}, {result.exchange}"
+                        result_message = f"结果: {result.status}, 获得 {result.points} 积分, 剩余 {result.days}, 总 {result.points_total}"
                     self._log(cookie_idx, domain, LogEmoji.SUCCESS, result_message, force=True)
                 else:
                     self._log(cookie_idx, domain, LogEmoji.WARNING, result_message, force=True)
@@ -510,19 +452,6 @@ class Checker:
             points_str, points_num = api.get_points(cookie)
             result.points_total = points_str
 
-            # 4. 执行兑换
-            if os.environ.get("GLADOS_SKIP_EXCHANGE", "").lower() not in ["true", "1", "yes", "y"]:
-                required_points = self.config.EXCHANGE_PLANS.get(self.config.exchange_plan, 500)
-                self._log(
-                    cookie_idx,
-                    domain,
-                    LogEmoji.EXCHANGE,
-                    f"开始兑换 {self.config.exchange_plan} (需要 {required_points} 积分)",
-                )
-                result.exchange = api.exchange(cookie, self.config.exchange_plan, required_points)
-            else:
-                self._log(cookie_idx, domain, LogEmoji.EXCHANGE, "实验模式：跳过兑换")
-                result.exchange = "实验模式：跳过兑换"
 
         return result
 
@@ -543,7 +472,7 @@ class Checker:
         send_content_lines = []
         log_content_lines = []
         for i, res in enumerate(results, 1):
-            line = f"#{i} P:{res['points']} 剩余:{res['days']} 总积分:{res['points_total']} | {res['status']} | {res['exchange']}"
+            line = f"#{i} P:{res['points']} 剩余:{res['days']} 总积分:{res['points_total']} | {res['status']}"
             send_content_lines.append(line)
 
             if self.config.verbose:
