@@ -28,6 +28,7 @@ jobs:
         run: python checkin.py
         env:
           GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
+          GLADOS_USER_AGENT: ${{ secrets.GLADOS_USER_AGENT }}
           GLADOS_EXCHANGE_PLAN: plan500
           GLADOS_SKIP_EXCHANGE: "true"
           GLADOS_VERBOSE: "true"
