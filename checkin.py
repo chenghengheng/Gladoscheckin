@@ -490,8 +490,10 @@ class Checker:
 logger = init_logger()
 
 
-def main():
-    """主函数"""
+def main() -> int:
+    """完成通知后返回签到退出码：成功/重复为 0，失败为 1。"""
+    exit_code = 1
+    config = None
     try:
         # 1. 加载配置
         logger.info(f"{LogEmoji.START} 步骤 1: 加载配置")
@@ -510,6 +512,11 @@ def main():
             logger.info(f"{LogEmoji.START} 步骤 3: 格式化结果")
             title, content, log_content = checker.format_results()
             logger.info(f"\n{LogEmoji.END}========== 签到总结 ==========\n{title}\n{log_content}")
+            if checker.results and all(
+                result.code in (CheckinStatus.SUCCESS, CheckinStatus.REPEAT)
+                for result in checker.results
+            ):
+                exit_code = 0
 
     except Exception as e:
         logger.error(f"{LogEmoji.ERROR} 主程序执行过程中发生未预期的错误: {e}")
@@ -517,10 +524,14 @@ def main():
 
     # 4. 发送推送
     logger.info(f"{LogEmoji.START} 步骤 4: 发送推送")
-    push_service = PushService(config if "config" in locals() else "")
-    push_service.send(title, content)
-    logger.info(f"{LogEmoji.END} 签到完成")
+    if config is not None:
+        push_service = PushService(config)
+        push_service.send(title, content)
+    else:
+        logger.warning(f"{LogEmoji.WARNING} 配置加载失败，跳过推送通知。")
+    logger.info(f"{LogEmoji.END} 签到完成，退出码: {exit_code}")
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
