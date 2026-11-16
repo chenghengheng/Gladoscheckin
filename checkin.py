@@ -1,5 +1,7 @@
 import requests
 import json
+import hashlib
+import time
 import os
 import logging
 from enum import Enum
@@ -21,6 +23,7 @@ class APIEndpoint(Enum):
     """API端点"""
 
     CHECKIN = "/api/user/checkin"
+    CHECKIN_CHALLENGE = "/api/user/checkin/challenge"
     STATUS = "/api/user/status"
     POINTS = "/api/user/points"
 
@@ -156,6 +159,7 @@ class API:
     """API 调用"""
 
     CHECKIN_URL = APIEndpoint.CHECKIN.value
+    CHECKIN_CHALLENGE_URL = APIEndpoint.CHECKIN_CHALLENGE.value
     STATUS_URL = APIEndpoint.STATUS.value
     POINTS_URL = APIEndpoint.POINTS.value
 
@@ -240,22 +244,44 @@ class API:
                 )
 
             if not response.ok:
-                self._log("warning", LogEmoji.WARNING, f"向 {url} 发起的请求失败，状态码 {response.status_code}。响应内容: {response.text}", force=True)
+                self._log("warning", LogEmoji.WARNING, f"向 {url} 请求失败，HTTP {response.status_code}。" + (" 可能受到 Cloudflare/Turnstile 限制；纯 HTTP Actions 无法完成浏览器人机验证。" if response.status_code in (403, 429, 503) else ""), force=True)
                 return None
             return response
         except requests.exceptions.RequestException as e:
             self._log("error", LogEmoji.ERROR, f"向 {url} 发起请求时发生网络错误: {e}", force=True)
             return None
 
-    def _get_checkin_data(self) -> Dict[str, str]:
-        """获取签到数据"""
-        return {"token": self.domain}
+    def _get_checkin_data(self, cookies: str) -> Dict[str, str]:
+        """优先使用上游 challenge 协议；接口不可用时兼容旧请求格式。"""
+        payload = {"token": self.domain}
+        response = self._make_request(self._get_full_url(self.CHECKIN_CHALLENGE_URL), "GET", cookies=cookies)
+        if response is None:
+            self._log("warning", LogEmoji.WARNING, "无法获取签到 challenge，将回退旧协议；若返回 code=5，需使用真实浏览器签到。", force=True)
+            return payload
+
+        try:
+            challenge = response.json()
+        except ValueError:
+            self._log("warning", LogEmoji.WARNING, "签到 challenge 响应不是 JSON，将回退旧协议。", force=True)
+            return payload
+
+        if not isinstance(challenge, dict) or challenge.get("code") != 0 or not challenge.get("nonce"):
+            self._log("warning", LogEmoji.WARNING, "签到 challenge 不可用，将回退旧协议。", force=True)
+            return payload
+
+        # 保持与参考项目网页协议一致：最少等待 2.5 秒，再提交 proof。
+        nonce = str(challenge["nonce"])
+        time.sleep(2.5)
+        payload["nonce"] = nonce
+        payload["proof"] = hashlib.sha256(f"{nonce}.glados-observe-v1".encode("utf-8")).hexdigest()
+        self._log("info", LogEmoji.INFO, "已获取签到 challenge，使用新版协议提交。")
+        return payload
 
     @log_method
     def checkin(self, cookies: str) -> Dict[str, Union[str, CheckinStatus]]:
         """执行签到"""
         url = self._get_full_url(self.CHECKIN_URL)
-        checkin_data = self._get_checkin_data()
+        checkin_data = self._get_checkin_data(cookies)
         response = self._make_request(url, "POST", checkin_data, cookies)
 
         result = {
@@ -266,7 +292,14 @@ class API:
         }
 
         if response:
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                self._log("warning", LogEmoji.WARNING, "签到响应不是 JSON，无法确认签到成功。", force=True)
+                return result
+            if not isinstance(data, dict):
+                self._log("warning", LogEmoji.WARNING, "签到响应不是 JSON 对象，无法确认签到成功。", force=True)
+                return result
             if self.verbose:
                 self._log(
                     "info",
@@ -274,11 +307,17 @@ class API:
                     f"签到响应诊断: code={data.get('code', -2)}, message={data.get('message', '无消息字段')!r}, "
                     f"response-cookie-names={sorted(response.cookies.keys())}",
                 )
-            code = data.get("code", -2)
-            message = data.get("message", "无消息字段")
+            try:
+                code = int(data.get("code", -2))
+            except (TypeError, ValueError):
+                code = -2
+            message = str(data.get("message", "无消息字段"))
             points = str(data.get("points", 0))
 
-            if code == CheckinStatus.SUCCESS.value:
+            if "please checkin via" in message.lower():
+                self._log("warning", LogEmoji.WARNING, "服务端要求使用其他登录域名签到；当前请求未完成。", force=True)
+                result["message"] = message
+            elif code == CheckinStatus.SUCCESS.value:
                 self._log("info", LogEmoji.SUCCESS, f"{{ code : {code}, points : {points}, message : {message} }}")
                 result["code"] = CheckinStatus.SUCCESS
                 result["status"] = "签到成功"
@@ -296,6 +335,9 @@ class API:
                 result["status"] = "签到失败"
                 result["points"] = "0"
                 result["message"] = message
+                if code == 5 or "cloudflare verification failed" in message.lower():
+                    result["status"] = "Cloudflare 验证失败"
+                    self._log("warning", LogEmoji.WARNING, "服务端要求 Cloudflare/Turnstile 验证，GitHub Actions 纯 HTTP 无法可靠完成；请使用上游浏览器扩展在本机补签。", force=True)
         else:
             self._log("warning", LogEmoji.WARNING, "签到失败", force=True)
             result["code"] = CheckinStatus.FAILURE
@@ -445,6 +487,7 @@ class Checker:
             self._log(cookie_idx, domain, LogEmoji.CHECKIN, "执行签到")
             checkin_result = api.checkin(cookie)
             result.status = checkin_result["status"]
+            result.points = checkin_result.get("points", "0")
             result.code = checkin_result.get("code", CheckinStatus.FAILURE)
 
             # 3. 获取积分
