@@ -292,7 +292,14 @@ class API:
         }
 
         if response:
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                self._log("warning", LogEmoji.WARNING, "签到响应不是 JSON，无法确认签到成功。", force=True)
+                return result
+            if not isinstance(data, dict):
+                self._log("warning", LogEmoji.WARNING, "签到响应不是 JSON 对象，无法确认签到成功。", force=True)
+                return result
             if self.verbose:
                 self._log(
                     "info",
@@ -300,9 +307,6 @@ class API:
                     f"签到响应诊断: code={data.get('code', -2)}, message={data.get('message', '无消息字段')!r}, "
                     f"response-cookie-names={sorted(response.cookies.keys())}",
                 )
-            if not isinstance(data, dict):
-                self._log("warning", LogEmoji.WARNING, "签到响应不是 JSON 对象，无法确认签到成功。", force=True)
-                return result
             try:
                 code = int(data.get("code", -2))
             except (TypeError, ValueError):
