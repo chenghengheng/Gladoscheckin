@@ -3,7 +3,7 @@ name: GLaDOS auto check
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths-ignore:
       - 'README.md'
       - 'imgs/**'
@@ -50,8 +50,9 @@ jobs:
       env:
         PUSHDEER_SENDKEY: ${{ secrets.PUSHDEER_SENDKEY }}
         GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
-        GLADOS_USER_AGENT: ${{ secrets.GLADOS_USER_AGENT }}
-        GLADOS_VERBOSE: ${{ secrets.GLADOS_VERBOSE }}
+        GLADOS_USER_AGENT: ${{ secrets.GLADOS_USER_AGENT || vars.GLADOS_USER_AGENT }}
+        # 无需另设 Secret 即可开启安全的诊断日志；Secret=false 可关闭。
+        GLADOS_VERBOSE: ${{ secrets.GLADOS_VERBOSE || 'true' }}
 
     - name: Keep alive
       uses: liskin/gh-workflow-keepalive@v1 
