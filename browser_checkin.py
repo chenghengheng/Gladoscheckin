@@ -127,7 +127,7 @@ def run(mode: str, timeout: int, profile: Path = CHROME_PROFILE) -> int:
                         return
                     try:
                         received.append(response.json())
-                    except ValueError:
+                    except Exception:
                         received.append(None)
 
                 page.on("response", on_response)
