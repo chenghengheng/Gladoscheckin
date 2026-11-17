@@ -265,7 +265,14 @@ class API:
             self._log("warning", LogEmoji.WARNING, "签到 challenge 响应不是 JSON，将回退旧协议。", force=True)
             return payload
 
-        if not isinstance(challenge, dict) or challenge.get("code") != 0 or not challenge.get("nonce"):
+        # 只记录元数据，不记录 nonce、Cookie 或 proof。
+        challenge_code = challenge.get("code") if isinstance(challenge, dict) else None
+        has_nonce = bool(challenge.get("nonce")) if isinstance(challenge, dict) else False
+        self._log(
+            "info", LogEmoji.INFO,
+            f"签到 challenge 诊断: code={challenge_code!r}, nonce_present={has_nonce}",
+        )
+        if challenge_code != 0 or not has_nonce:
             self._log("warning", LogEmoji.WARNING, "签到 challenge 不可用，将回退旧协议。", force=True)
             return payload
 
@@ -337,7 +344,13 @@ class API:
                 result["message"] = message
                 if code == 5 or "cloudflare verification failed" in message.lower():
                     result["status"] = "Cloudflare 验证失败"
-                    self._log("warning", LogEmoji.WARNING, "服务端要求 Cloudflare/Turnstile 验证，GitHub Actions 纯 HTTP 无法可靠完成；请使用上游浏览器扩展在本机补签。", force=True)
+                    self._log(
+                        "warning", LogEmoji.WARNING,
+                        f"服务端返回 code=5：已提交 challenge proof={bool(checkin_data.get('proof'))}；"
+                        "nonce/proof 不等同于 Cloudflare/Turnstile 浏览器验证。"
+                        "此次签到未完成，请在真实浏览器中完成验证与补签。",
+                        force=True,
+                    )
         else:
             self._log("warning", LogEmoji.WARNING, "签到失败", force=True)
             result["code"] = CheckinStatus.FAILURE
