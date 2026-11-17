@@ -45,6 +45,38 @@ class CheckinChallengeTests(unittest.TestCase):
         self.assertEqual(result["code"], CheckinStatus.FAILURE)
         self.assertEqual(result["status"], "Cloudflare 验证失败")
 
+    def test_challenge_diagnostics_do_not_expose_secrets(self):
+        self.api.verbose = True
+        challenge_response = Mock()
+        challenge_response.json.return_value = {"code": 0, "nonce": "private-nonce"}
+        with patch.object(self.api, "_make_request", return_value=challenge_response), \
+             patch.object(self.api, "_log") as write_log, \
+             patch("checkin.time.sleep"):
+            result = self.api._get_checkin_data("private-cookie")
+        messages = " ".join(str(call.args[2]) for call in write_log.call_args_list)
+        self.assertIn("code=0", messages)
+        self.assertIn("nonce_present=True", messages)
+        self.assertNotIn("private-cookie", messages)
+        self.assertNotIn("private-nonce", messages)
+        self.assertNotIn(result["proof"], messages)
+
+    def test_code_five_reports_whether_challenge_was_submitted(self):
+        challenge_response = Mock()
+        challenge_response.json.return_value = {"code": 0, "nonce": "private-nonce"}
+        checkin_response = Mock()
+        checkin_response.json.return_value = {
+            "code": 5, "message": "Cloudflare verification failed. Nothing was recorded — please retry."
+        }
+        with patch.object(self.api, "_make_request", side_effect=[challenge_response, checkin_response]), \
+             patch.object(self.api, "_log") as write_log, \
+             patch("checkin.time.sleep"):
+            result = self.api.checkin("private-cookie")
+        messages = " ".join(str(call.args[2]) for call in write_log.call_args_list)
+        self.assertIn("已提交 challenge proof=True", messages)
+        self.assertNotIn("private-cookie", messages)
+        self.assertNotIn("private-nonce", messages)
+        self.assertEqual(result["code"], CheckinStatus.FAILURE)
+
     def test_domain_mismatch_is_not_false_success(self):
         challenge_response = Mock()
         challenge_response.json.return_value = {"code": 0, "nonce": "x"}
