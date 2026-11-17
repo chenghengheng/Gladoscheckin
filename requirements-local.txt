@@ -1,0 +1,2 @@
+# Optional: only for local Chrome browser check-in; not installed in GitHub Actions
+playwright>=1.55,<2
