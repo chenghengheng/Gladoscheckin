@@ -24,3 +24,8 @@ logs
 build/
 dist/
 *.egg-info/
+
+# Browser-assisted local check-in session data
+.gladoscheckin/
+chrome-profile/
+completed.json
