@@ -1,5 +1,9 @@
 # Glados自动签到
 
+## 本地浏览器签到（2026-11 补充）
+
+当 GitHub Actions 返回 `code=5 Cloudflare verification failed` 时，已有 challenge nonce/proof 并不保证通过网站的人机验证。仓库新增 [Mac 本地真实浏览器签到实验方案](docs/local-browser-checkin.md)，使用自己的 Chrome 登录态，由网站自行完成验证；云端 Actions 无法因此自动获得验证能力。本地方案需先人工登录并实测，不保证完全无人值守。
+
 ## 食用方式：
 
 ### 注册一个GLaDOS的账号([注册地址](https://glados.space/landing/0A58E-NV28S-6U3QV-33VMG))
