@@ -58,6 +58,10 @@
 
 
 ## 问题排查与定位\r\n- `glados.cloud` 使用 `gld:sess` / `gld:sess.sig` Cookie；签到请求还需要 `GLADOS_USER_AGENT` 与登录浏览器的平台保持一致。脚本不再执行自动兑换。
+- GitHub Actions 默认启用安全诊断日志（`GLADOS_VERBOSE=true`）；若希望关闭，可添加 Secret `GLADOS_VERBOSE=false`。日志仅记录请求状态、challenge code 与是否存在 nonce/proof，不输出实际 Cookie、nonce 或 proof。
+- `GLADOS_USER_AGENT` 请设置为实际登录 GLaDOS 的浏览器 `navigator.userAgent`，也支持 Repository variable。未配置时使用脚本默认值，但匹配 User-Agent 不能代替人机验证。
+- 若日志为 `code=5 Cloudflare verification failed`，表示当次签到未完成。即使成功获取 challenge nonce/proof，也可能需要真实浏览器完成 Cloudflare/Turnstile 验证；建议浏览器人工补签，避免无意义地高频重试。
+- 日志显示 `code=1` 只代表“当天已签到”，不能证明本次 Action 完成了新签到。
 - 大家可以通过查询 actions 中的 running checkin 日志快速定位问题，有其他问题提交issue。
 
   <img width="1684" height="844" alt="image" src="https://github.com/user-attachments/assets/45348a5f-43e4-45f5-8fdf-ce84d343b30d" />
